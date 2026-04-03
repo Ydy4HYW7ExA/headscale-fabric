@@ -1,0 +1,80 @@
+@echo off
+REM Headscale Fabric — Windows one-click setup
+REM Run as Administrator: right-click > Run as administrator
+REM Or: powershell -Command "Start-Process cmd -ArgumentList '/c','path\to\join-windows.cmd' -Verb RunAs"
+setlocal EnableExtensions EnableDelayedExpansion
+
+set "LOGIN_SERVER=https://{{ headscale_domain }}"
+set "AUTHKEY={{ win_authkey }}"
+set "TS=%ProgramFiles%\Tailscale\tailscale.exe"
+set "CONF_DIR=C:\headscale-fabric"
+set "WATCHDOG=%CONF_DIR%\watchdog.cmd"
+
+echo [1/5] Checking Tailscale installation...
+if not exist "%TS%" (
+    echo Tailscale is not installed.
+    echo Install from: https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi
+    echo After installing, re-run this script.
+    pause
+    exit /b 1
+)
+echo   Found: %TS%
+
+echo [2/5] Ensuring Tailscale service is running...
+sc query Tailscale >nul 2>&1
+if %errorlevel% neq 0 (
+    echo   Starting Tailscale service...
+    net start Tailscale >nul 2>&1
+)
+sc config Tailscale start= auto >nul 2>&1
+
+echo [3/5] Joining tailnet...
+"%TS%" up --force-reauth --login-server "%LOGIN_SERVER%" --authkey "%AUTHKEY%" --accept-routes=false --accept-dns=true
+if errorlevel 1 (
+    echo Join failed.
+    pause
+    exit /b 1
+)
+
+echo [4/5] Installing watchdog...
+if not exist "%CONF_DIR%" mkdir "%CONF_DIR%"
+echo true> "%CONF_DIR%\watchdog.enabled"
+
+(
+echo @echo off
+echo setlocal EnableExtensions EnableDelayedExpansion
+echo set "CONF_DIR=C:\headscale-fabric"
+echo set "ENABLED_FILE=%%CONF_DIR%%\watchdog.enabled"
+echo set "LOG=%%CONF_DIR%%\watchdog.log"
+echo set "TS=%%ProgramFiles%%\Tailscale\tailscale.exe"
+echo set "LOGIN_SERVER=%LOGIN_SERVER%"
+echo if exist "%%ENABLED_FILE%%" (
+echo     set /p ENABLED=^<"%%ENABLED_FILE%%"
+echo     if /i "%%ENABLED%%"=="false" exit /b 0
+echo ^)
+echo if not exist "%%TS%%" exit /b 0
+echo "%%TS%%" status ^>nul 2^>^&1
+echo if %%errorlevel%%==0 exit /b 0
+echo echo %%date%% %%time%% watchdog: reconnecting... ^>^> "%%LOG%%"
+echo "%%TS%%" up --login-server "%%LOGIN_SERVER%%" --accept-routes=false --accept-dns=true ^>^> "%%LOG%%" 2^>^&1
+echo echo %%date%% %%time%% watchdog: reconnect attempted ^>^> "%%LOG%%"
+echo exit /b 0
+) > "%WATCHDOG%"
+
+REM Install scheduled task — every minute
+schtasks /delete /tn "HeadscaleFabricWatchdog" /f >nul 2>&1
+schtasks /create /tn "HeadscaleFabricWatchdog" /tr "\"%WATCHDOG%\"" /sc minute /mo 1 /ru SYSTEM /rl HIGHEST /f >nul 2>&1
+if errorlevel 1 (
+    echo WARNING: Could not create scheduled task. Watchdog not installed.
+) else (
+    echo   Watchdog scheduled task installed.
+)
+
+echo [5/5] Verifying...
+"%TS%" status
+echo.
+echo Done. Watchdog active.
+echo Disable: echo false ^> %CONF_DIR%\watchdog.enabled
+echo Remove:  schtasks /delete /tn "HeadscaleFabricWatchdog" /f
+pause
+exit /b 0

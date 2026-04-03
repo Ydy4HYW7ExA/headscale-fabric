@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Headscale Fabric watchdog for macOS — ensures tailscale stays connected.
+# Installed by the one-click setup script. Runs via cron every minute.
+#
+# Disable: echo false > /etc/headscale-fabric/watchdog.enabled
+# Enable:  echo true  > /etc/headscale-fabric/watchdog.enabled
+# Remove:  crontab -l | grep -v headscale-watchdog | crontab -
+
+set -euo pipefail
+
+CONF_DIR="/etc/headscale-fabric"
+ENABLED_FILE="${CONF_DIR}/watchdog.enabled"
+LOG="/var/log/headscale-watchdog.log"
+LOGIN_SERVER="{{ login_server }}"
+
+# Check kill switch
+if [ -f "$ENABLED_FILE" ] && [ "$(cat "$ENABLED_FILE" 2>/dev/null)" = "false" ]; then
+    exit 0
+fi
+
+# Find tailscale binary
+TS="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+if [ ! -x "$TS" ]; then
+    TS=$(command -v tailscale 2>/dev/null || true)
+fi
+if [ -z "$TS" ]; then
+    exit 0
+fi
+
+# Check backend state
+STATE=$("$TS" status --json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('BackendState',''))" 2>/dev/null || echo "")
+
+if [ "$STATE" = "Running" ]; then
+    exit 0
+fi
+
+# Not running — attempt reconnect
+echo "$(date -Iseconds) watchdog: state=$STATE, reconnecting..." >> "$LOG"
+"$TS" up --login-server "$LOGIN_SERVER" --accept-routes=false --accept-dns=true >> "$LOG" 2>&1 || true
+echo "$(date -Iseconds) watchdog: reconnect attempted" >> "$LOG"

@@ -1,0 +1,109 @@
+- name: Deploy headscale stack
+  hosts: control_plane
+  gather_facts: false
+  vars:
+    headscale_base: /opt/headscale
+    snapshot_dir: /opt/headscale/latest-state
+  tasks:
+    - name: Ensure base directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ headscale_base }}/config"
+        - "{{ headscale_base }}/data"
+        - "{{ headscale_base }}/downloads"
+        - "{{ headscale_base }}/backups"
+        - "{{ headscale_base }}/planned"
+        - "{{ snapshot_dir }}"
+
+    - name: Deploy docker-compose.yml from template
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../../../assets/templates/headscale/docker-compose.yml.j2"
+        dest: "{{ headscale_base }}/docker-compose.yml"
+        mode: "0644"
+      notify: restart headscale
+
+    - name: Deploy headscale config from template
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../../../assets/templates/headscale/config.yaml.j2"
+        dest: "{{ headscale_base }}/config/config.yaml"
+        mode: "0644"
+      notify: restart headscale
+
+    - name: Deploy Caddyfile from template
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../../../assets/templates/caddy/Caddyfile.j2"
+        dest: "{{ headscale_base }}/Caddyfile"
+        mode: "0644"
+      notify: reload caddy
+
+    - name: Deploy snapshot script from template
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../../../assets/templates/headscale/snapshot.sh.j2"
+        dest: "{{ headscale_base }}/snapshot.sh"
+        mode: "0755"
+
+    - name: Ensure snapshot cron job
+      ansible.builtin.cron:
+        name: headscale-snapshot
+        minute: "*/5"
+        job: "{{ headscale_base }}/snapshot.sh >> /var/log/headscale-snapshot.log 2>&1"
+
+    - name: Deploy downloads portal files
+      ansible.builtin.template:
+        src: "{{ item }}"
+        dest: "{{ headscale_base }}/downloads/{{ item | basename | regex_replace('\\.j2$', '') }}"
+        mode: "0755"
+      with_fileglob:
+        - "{{ playbook_dir }}/../../../assets/templates/downloads/*.j2"
+      ignore_errors: true
+
+    - name: Pull and start containers
+      ansible.builtin.shell: |
+        cd {{ headscale_base }}
+        docker compose pull
+        docker compose up -d
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Wait for headscale to be healthy
+      ansible.builtin.shell: |
+        for i in $(seq 1 30); do
+          docker exec headscale headscale nodes list > /dev/null 2>&1 && exit 0
+          sleep 1
+        done
+        exit 1
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Show running services
+      ansible.builtin.command: docker compose -f {{ headscale_base }}/docker-compose.yml ps
+      register: compose_ps
+      changed_when: false
+
+    - name: Print status
+      ansible.builtin.debug:
+        var: compose_ps.stdout_lines
+
+    - name: Run initial snapshot
+      ansible.builtin.command: "{{ headscale_base }}/snapshot.sh"
+      changed_when: true
+
+  handlers:
+    - name: restart headscale
+      ansible.builtin.shell: |
+        cd {{ headscale_base }}
+        docker compose restart headscale
+      args:
+        executable: /bin/bash
+
+    - name: reload caddy
+      ansible.builtin.shell: |
+        cd {{ headscale_base }}
+        docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || docker compose restart caddy
+      args:
+        executable: /bin/bash

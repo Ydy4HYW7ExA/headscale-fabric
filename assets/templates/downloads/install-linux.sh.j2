@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Headscale Fabric — Linux one-click setup
+# Usage: curl -fsSL https://{{ headscale_domain }}/downloads/install-linux.sh | sudo bash
+set -euo pipefail
+
+LOGIN_SERVER="https://{{ headscale_domain }}"
+AUTHKEY="{{ linux_authkey }}"
+CONF_DIR="/etc/headscale-fabric"
+WATCHDOG="/usr/local/bin/headscale-watchdog.sh"
+
+echo "[1/5] Installing Tailscale..."
+if ! command -v tailscale >/dev/null 2>&1; then
+    curl -fsSL https://tailscale.com/install.sh | sh
+else
+    echo "  already installed: $(tailscale --version 2>/dev/null | head -1)"
+fi
+
+echo "[2/5] Enabling tailscaled service..."
+systemctl enable --now tailscaled
+
+echo "[3/5] Joining tailnet..."
+tailscale up --login-server "$LOGIN_SERVER" --authkey "$AUTHKEY" --accept-routes=false --accept-dns=true
+
+echo "[4/5] Installing watchdog..."
+mkdir -p "$CONF_DIR"
+echo "true" > "$CONF_DIR/watchdog.enabled"
+
+cat > "$WATCHDOG" << 'WATCHDOG_SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+CONF_DIR="/etc/headscale-fabric"
+ENABLED_FILE="${CONF_DIR}/watchdog.enabled"
+LOG="/var/log/headscale-watchdog.log"
+LOGIN_SERVER="LOGIN_SERVER_PLACEHOLDER"
+
+if [ -f "$ENABLED_FILE" ] && [ "$(cat "$ENABLED_FILE" 2>/dev/null)" = "false" ]; then
+    exit 0
+fi
+if ! command -v tailscale >/dev/null 2>&1; then
+    exit 0
+fi
+STATE=$(tailscale status --json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('BackendState',''))" 2>/dev/null || echo "")
+if [ "$STATE" = "Running" ]; then
+    exit 0
+fi
+echo "$(date -Iseconds) watchdog: state=$STATE, reconnecting..." >> "$LOG"
+tailscale up --login-server "$LOGIN_SERVER" --accept-routes=false --accept-dns=true >> "$LOG" 2>&1 || true
+echo "$(date -Iseconds) watchdog: reconnect attempted" >> "$LOG"
+WATCHDOG_SCRIPT
+
+sed -i "s|LOGIN_SERVER_PLACEHOLDER|$LOGIN_SERVER|g" "$WATCHDOG"
+chmod +x "$WATCHDOG"
+
+# Install cron — remove old entry if exists, then add
+(crontab -l 2>/dev/null | grep -v headscale-watchdog; echo "* * * * * $WATCHDOG # headscale-watchdog") | crontab -
+
+echo "[5/5] Verifying..."
+tailscale status
+echo ""
+echo "Done. Watchdog active (disable: echo false > $CONF_DIR/watchdog.enabled)"

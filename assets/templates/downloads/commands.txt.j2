@@ -1,0 +1,18 @@
+安装门户
+https://{{ headscale_domain }}/downloads/
+
+Ubuntu / Linux（需要 sudo）
+curl -fsSL https://{{ headscale_domain }}/downloads/install-linux.sh | sudo bash
+
+macOS
+curl -fsSL https://{{ headscale_domain }}/downloads/install-mac.sh | bash
+
+Windows
+https://{{ headscale_domain }}/downloads/windows.html
+
+说明
+- 安装脚本会自动：安装 Tailscale、启用系统服务、加入 tailnet、部署看门狗守护
+- 看门狗每分钟检测一次，掉线自动重连
+- 禁用看门狗：
+  Linux/macOS: echo false > /etc/headscale-fabric/watchdog.enabled
+  Windows:     echo false > C:\headscale-fabric\watchdog.enabled

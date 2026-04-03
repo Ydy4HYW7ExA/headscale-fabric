@@ -1,0 +1,34 @@
+services:
+  headscale:
+    image: {{ headscale_image }}
+    container_name: headscale
+    restart: unless-stopped
+    command: serve
+    volumes:
+      - ./config:/etc/headscale
+      - ./data:/var/lib/headscale
+      - /var/run/headscale:/var/run/headscale
+    ports:
+      - '3478:3478/udp'
+      - '50443:50443'
+    networks:
+      - headscale
+  caddy:
+    image: {{ caddy_image }}
+    container_name: headscale-caddy
+    restart: unless-stopped
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/data:/data
+      - ./caddy/config:/config
+      - /opt/headscale/downloads:/var/www/headscale-downloads:ro
+    ports:
+      - '80:80'
+      - '443:443'
+    depends_on:
+      - headscale
+    networks:
+      - headscale
+networks:
+  headscale:
+    driver: bridge

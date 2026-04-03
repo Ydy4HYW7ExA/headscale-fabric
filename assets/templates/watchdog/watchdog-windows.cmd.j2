@@ -1,0 +1,34 @@
+@echo off
+REM Headscale Fabric watchdog for Windows — ensures tailscale stays connected.
+REM Installed by the one-click setup script. Runs via Task Scheduler every minute.
+REM
+REM Disable: echo false > C:\headscale-fabric\watchdog.enabled
+REM Enable:  echo true  > C:\headscale-fabric\watchdog.enabled
+REM Remove:  schtasks /delete /tn "HeadscaleFabricWatchdog" /f
+
+setlocal EnableExtensions EnableDelayedExpansion
+
+set "CONF_DIR=C:\headscale-fabric"
+set "ENABLED_FILE=%CONF_DIR%\watchdog.enabled"
+set "LOG=%CONF_DIR%\watchdog.log"
+set "TS=%ProgramFiles%\Tailscale\tailscale.exe"
+set "LOGIN_SERVER={{ login_server }}"
+
+REM Check kill switch
+if exist "%ENABLED_FILE%" (
+    set /p ENABLED=<"%ENABLED_FILE%"
+    if /i "!ENABLED!"=="false" exit /b 0
+)
+
+REM Check tailscale exists
+if not exist "%TS%" exit /b 0
+
+REM Check if running — look for "Running" in status output
+"%TS%" status >nul 2>&1
+if %errorlevel%==0 exit /b 0
+
+REM Not running — attempt reconnect
+echo %date% %time% watchdog: reconnecting... >> "%LOG%"
+"%TS%" up --login-server "%LOGIN_SERVER%" --accept-routes=false --accept-dns=true >> "%LOG%" 2>&1
+echo %date% %time% watchdog: reconnect attempted >> "%LOG%"
+exit /b 0

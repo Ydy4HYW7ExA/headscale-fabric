@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Headscale Fabric — macOS one-click setup
+# Usage: curl -fsSL https://{{ headscale_domain }}/downloads/install-mac.sh | bash
+set -euo pipefail
+
+LOGIN_SERVER="https://{{ headscale_domain }}"
+AUTHKEY="{{ mac_authkey }}"
+CONF_DIR="/etc/headscale-fabric"
+WATCHDOG="/usr/local/bin/headscale-watchdog.sh"
+
+echo "[1/5] Installing Tailscale..."
+if [ -x /Applications/Tailscale.app/Contents/MacOS/Tailscale ]; then
+    echo "  already installed"
+    TS="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+elif command -v brew >/dev/null 2>&1; then
+    echo "  installing via Homebrew..."
+    brew install --cask tailscale >/dev/null 2>&1 || true
+    TS="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+else
+    echo "ERROR: Tailscale.app not found and Homebrew not available."
+    echo "Install from: https://apps.apple.com/app/tailscale/id1475387142"
+    exit 1
+fi
+
+echo "[2/5] Joining tailnet..."
+sudo "$TS" up --force-reauth --login-server "$LOGIN_SERVER" --authkey "$AUTHKEY" --accept-routes=false --accept-dns=true
+
+echo "[3/5] Ensuring Tailscale launches at login..."
+# Tailscale.app registers its own LaunchAgent; just confirm it's open
+open -a Tailscale 2>/dev/null || true
+
+echo "[4/5] Installing watchdog..."
+sudo mkdir -p "$CONF_DIR"
+echo "true" | sudo tee "$CONF_DIR/watchdog.enabled" > /dev/null
+
+sudo tee "$WATCHDOG" > /dev/null << 'WATCHDOG_SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+CONF_DIR="/etc/headscale-fabric"
+ENABLED_FILE="${CONF_DIR}/watchdog.enabled"
+LOG="/var/log/headscale-watchdog.log"
+LOGIN_SERVER="LOGIN_SERVER_PLACEHOLDER"
+
+if [ -f "$ENABLED_FILE" ] && [ "$(cat "$ENABLED_FILE" 2>/dev/null)" = "false" ]; then
+    exit 0
+fi
+TS="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+if [ ! -x "$TS" ]; then TS=$(command -v tailscale 2>/dev/null || true); fi
+if [ -z "$TS" ]; then exit 0; fi
+STATE=$("$TS" status --json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('BackendState',''))" 2>/dev/null || echo "")
+if [ "$STATE" = "Running" ]; then exit 0; fi
+echo "$(date -Iseconds) watchdog: state=$STATE, reconnecting..." >> "$LOG"
+"$TS" up --login-server "$LOGIN_SERVER" --accept-routes=false --accept-dns=true >> "$LOG" 2>&1 || true
+echo "$(date -Iseconds) watchdog: reconnect attempted" >> "$LOG"
+WATCHDOG_SCRIPT
+
+sudo sed -i '' "s|LOGIN_SERVER_PLACEHOLDER|$LOGIN_SERVER|g" "$WATCHDOG"
+sudo chmod +x "$WATCHDOG"
+
+# Install cron
+(crontab -l 2>/dev/null | grep -v headscale-watchdog; echo "* * * * * $WATCHDOG # headscale-watchdog") | crontab -
+
+echo "[5/5] Verifying..."
+"$TS" status || tailscale status || true
+echo ""
+echo "Done. Watchdog active (disable: echo false | sudo tee $CONF_DIR/watchdog.enabled)"

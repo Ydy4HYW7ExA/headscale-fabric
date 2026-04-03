@@ -1,0 +1,39 @@
+- name: Backup headscale state
+  hosts: control_plane
+  gather_facts: false
+  tasks:
+    - name: Create timestamped backup directory
+      ansible.builtin.shell: |
+        set -euo pipefail
+        TS=$(date +%Y%m%d-%H%M%S)
+        BASE=/opt/headscale/backups/$TS
+        mkdir -p "$BASE"/files "$BASE"/state
+        printf "%s" "$BASE"
+      args:
+        executable: /bin/bash
+      register: backup_dir
+      changed_when: true
+
+    - name: Copy key files and state
+      ansible.builtin.shell: |
+        set -euo pipefail
+        BASE={{ backup_dir.stdout }}
+        cp -a /opt/headscale/config "$BASE/files/"
+        cp -a /opt/headscale/docker-compose.yml "$BASE/files/"
+        cp -a /opt/headscale/Caddyfile "$BASE/files/"
+        cp -a /opt/headscale/downloads "$BASE/files/"
+        cp -a /opt/headscale/data "$BASE/files/"
+        docker exec headscale headscale nodes list > "$BASE/state/nodes.txt"
+        docker exec headscale headscale policy get -o json > "$BASE/state/policy.json"
+        docker exec headscale headscale preauthkeys list -o json > "$BASE/state/preauthkeys.json"
+        docker ps --no-trunc > "$BASE/state/docker-ps.txt"
+        docker inspect headscale headscale-caddy > "$BASE/state/docker-inspect.json"
+        docker images --digests > "$BASE/state/docker-images.txt"
+        docker compose -f /opt/headscale/docker-compose.yml ps > "$BASE/state/compose-ps.txt"
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Show backup location
+      ansible.builtin.debug:
+        msg: "Backup created at {{ backup_dir.stdout }}"

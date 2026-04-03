@@ -1,0 +1,16 @@
+nodes:
+  - name: ubuntu-0
+    os: ubuntu
+    role: control-plane
+  - name: ubuntu-master
+    os: ubuntu
+    role: operator-host
+  - name: ubuntu-1
+    os: ubuntu
+    role: managed-node
+  - name: mac-1
+    os: macos
+    role: managed-node
+  - name: win-1
+    os: windows
+    role: managed-node

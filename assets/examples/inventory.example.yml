@@ -1,0 +1,26 @@
+all:
+  children:
+    control_plane:
+      hosts:
+        ubuntu-0:
+          ansible_host: <your-server-ip>
+          ansible_user: root
+    operator_hosts:
+      hosts:
+        ubuntu-master:
+          ansible_host: ubuntu-master.tailnet.example.sslip.io
+          ansible_user: h
+    ubuntu_nodes:
+      hosts:
+        ubuntu-1:
+          ansible_host: ubuntu-1.tailnet.example.sslip.io
+          ansible_user: david
+    mac_nodes:
+      hosts:
+        mac-1:
+          ansible_host: mac-1.tailnet.example.sslip.io
+          ansible_user: user
+    windows_nodes:
+      hosts:
+        win-1:
+          ansible_host: win-1.tailnet.example.sslip.io

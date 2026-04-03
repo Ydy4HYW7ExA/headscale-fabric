@@ -1,0 +1,148 @@
+- name: Bootstrap a new control plane server
+  hosts: control_plane
+  gather_facts: true
+  vars:
+    headscale_base: /opt/headscale
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Check if docker is already installed
+      ansible.builtin.command: docker --version
+      register: docker_check
+      changed_when: false
+      failed_when: false
+
+    - name: Install Docker via convenience script (if not present)
+      ansible.builtin.shell: |
+        curl -fsSL https://get.docker.com | sh
+      args:
+        executable: /bin/bash
+      when: docker_check.rc != 0
+      changed_when: true
+
+    - name: Install additional required packages
+      ansible.builtin.apt:
+        name:
+          - sshpass
+          - python3
+          - curl
+          - jq
+        state: present
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Ensure docker service is running
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Create headscale directory structure
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ headscale_base }}"
+        - "{{ headscale_base }}/config"
+        - "{{ headscale_base }}/data"
+        - "{{ headscale_base }}/downloads"
+        - "{{ headscale_base }}/backups"
+        - "{{ headscale_base }}/planned"
+        - "{{ headscale_base }}/latest-state"
+
+    - name: Deploy docker-compose.yml
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../../../assets/templates/headscale/docker-compose.yml.j2"
+        dest: "{{ headscale_base }}/docker-compose.yml"
+        mode: "0644"
+
+    - name: Deploy headscale config
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../../../assets/templates/headscale/config.yaml.j2"
+        dest: "{{ headscale_base }}/config/config.yaml"
+        mode: "0644"
+
+    - name: Deploy Caddyfile
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../../../assets/templates/caddy/Caddyfile.j2"
+        dest: "{{ headscale_base }}/Caddyfile"
+        mode: "0644"
+
+    - name: Deploy snapshot script
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../../../assets/templates/headscale/snapshot.sh.j2"
+        dest: "{{ headscale_base }}/snapshot.sh"
+        mode: "0755"
+
+    - name: Install snapshot cron
+      ansible.builtin.cron:
+        name: headscale-snapshot
+        minute: "*/5"
+        job: "{{ headscale_base }}/snapshot.sh >> /var/log/headscale-snapshot.log 2>&1"
+
+    - name: Pull and start containers
+      ansible.builtin.shell: |
+        cd {{ headscale_base }}
+        docker compose pull
+        docker compose up -d
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Wait for headscale to be healthy
+      ansible.builtin.shell: |
+        for i in $(seq 1 30); do
+          docker exec headscale headscale nodes list > /dev/null 2>&1 && exit 0
+          sleep 1
+        done
+        exit 1
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Create default user
+      ansible.builtin.command: docker exec headscale headscale users create default
+      register: create_user
+      changed_when: create_user.rc == 0
+      failed_when: false
+
+    - name: Get default user ID
+      ansible.builtin.shell: |
+        docker exec headscale headscale users list -o json | python3 -c "
+        import sys, json
+        users = json.load(sys.stdin)
+        for u in users:
+            if u.get('name') == 'default':
+                print(u['id'])
+                break
+        "
+      args:
+        executable: /bin/bash
+      register: user_id
+      changed_when: false
+
+    - name: Generate preauth key
+      ansible.builtin.command: docker exec headscale headscale preauthkeys create -u {{ user_id.stdout | trim }} --reusable --expiration 24h
+      register: preauth_key
+      changed_when: true
+
+    - name: Show preauth key
+      ansible.builtin.debug:
+        msg: "Preauth key: {{ preauth_key.stdout }}"
+
+    - name: Run initial snapshot
+      ansible.builtin.command: "{{ headscale_base }}/snapshot.sh"
+      changed_when: true
+
+    - name: Show final status
+      ansible.builtin.command: docker compose -f {{ headscale_base }}/docker-compose.yml ps
+      register: final_status
+      changed_when: false
+
+    - name: Print status
+      ansible.builtin.debug:
+        var: final_status.stdout_lines

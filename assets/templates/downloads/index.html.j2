@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Headscale 安装门户</title>
+  <style>
+    :root { color-scheme: light; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 40px auto; max-width: 980px; padding: 0 20px; color: #111827; background: #f9fafb; }
+    h1 { margin: 0 0 8px; }
+    p { color: #374151; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; margin-top: 24px; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 14px; padding: 22px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    .btn { display: inline-block; margin-top: 10px; background: #2563eb; color: #fff; padding: 11px 16px; border-radius: 10px; text-decoration: none; font-weight: 600; }
+    .btn:hover { background: #1d4ed8; }
+    .btn-secondary { background: #111827; }
+    .btn-secondary:hover { background: #000; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    pre { background: #111827; color: #f9fafb; padding: 14px; border-radius: 10px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+    .footer { margin-top: 28px; }
+    .muted { color: #6b7280; font-size: 14px; }
+    .badge { display: inline-block; background: #059669; color: #fff; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; margin-left: 6px; vertical-align: middle; }
+    ul { padding-left: 20px; }
+  </style>
+</head>
+<body>
+  <h1>Headscale 安装门户</h1>
+  <p>一条命令完成：安装 Tailscale + 加入网络 + 部署看门狗守护（每分钟自动检测，掉线自动重连）。</p>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Ubuntu / Linux <span class="badge">sudo</span></h2>
+      <p>直接执行一条在线命令。</p>
+      <pre><code>curl -fsSL https://{{ headscale_domain }}/downloads/install-linux.sh | sudo bash</code></pre>
+      <a class="btn" href="/downloads/install-linux.sh">打开脚本</a>
+    </section>
+
+    <section class="card">
+      <h2>macOS</h2>
+      <p>直接执行一条在线命令。</p>
+      <pre><code>curl -fsSL https://{{ headscale_domain }}/downloads/install-mac.sh | bash</code></pre>
+      <a class="btn" href="/downloads/install-mac.sh">打开脚本</a>
+    </section>
+
+    <section class="card">
+      <h2>Windows <span class="badge">管理员</span></h2>
+      <p>先装官方 MSI，再下载接入脚本以管理员身份运行。</p>
+      <a class="btn" href="/downloads/windows.html">打开 Windows 页面</a>
+      <a class="btn btn-secondary" href="/downloads/join-windows.cmd" download>直接下载接入脚本</a>
+    </section>
+  </div>
+
+  <div class="card footer">
+    <h2>安装后自动获得</h2>
+    <ul>
+      <li>Tailscale 系统服务（开机自启）</li>
+      <li>看门狗守护进程（每分钟检测，掉线自动重连）</li>
+      <li>禁用看门狗：<code>echo false &gt; /etc/headscale-fabric/watchdog.enabled</code>（Windows: <code>C:\headscale-fabric\watchdog.enabled</code>）</li>
+    </ul>
+  </div>
+
+  <div class="card footer">
+    <h2>加入 tailnet 后的可读入口</h2>
+    <ul>
+      <li>Ubuntu 主机：<code>ubuntu-master.{{ tailnet_suffix }}</code></li>
+      <li>Ubuntu 节点：<code>ubuntu-1.{{ tailnet_suffix }}</code></li>
+      <li>macOS：<code>mac-1.{{ tailnet_suffix }}</code></li>
+      <li>Windows：<code>win-1.{{ tailnet_suffix }}</code></li>
+    </ul>
+  </div>
+
+  <div class="card footer">
+    <h2>固定地址</h2>
+    <ul>
+      <li>安装门户：<a href="/downloads/">https://{{ headscale_domain }}/downloads/</a></li>
+      <li>纯文本命令：<a href="/downloads/commands.txt">https://{{ headscale_domain }}/downloads/commands.txt</a></li>
+      <li>Windows 页面：<a href="/downloads/windows.html">https://{{ headscale_domain }}/downloads/windows.html</a></li>
+    </ul>
+  </div>
+</body>
+</html>

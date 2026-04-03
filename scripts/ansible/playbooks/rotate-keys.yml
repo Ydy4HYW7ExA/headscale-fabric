@@ -1,0 +1,55 @@
+- name: Rotate preauth keys
+  hosts: control_plane
+  gather_facts: false
+  tasks:
+    - name: Get default user ID
+      ansible.builtin.shell: |
+        docker exec headscale headscale users list -o json | python3 -c "
+        import sys, json
+        users = json.load(sys.stdin)
+        for u in users:
+            if u.get('name') == 'default':
+                print(u['id'])
+                break
+        "
+      args:
+        executable: /bin/bash
+      register: user_id
+      changed_when: false
+
+    - name: List current preauth keys
+      ansible.builtin.command: docker exec headscale headscale preauthkeys list -o json
+      register: current_keys
+      changed_when: false
+
+    - name: Show current keys
+      ansible.builtin.debug:
+        msg: "{{ current_keys.stdout | from_json | length }} key(s) found"
+
+    - name: Expire all existing reusable keys
+      ansible.builtin.shell: |
+        for kid in $(docker exec headscale headscale preauthkeys list -o json | python3 -c "
+        import sys, json
+        keys = json.load(sys.stdin)
+        for k in keys:
+            if k.get('reusable'):
+                print(k['key'])
+        "); do
+          docker exec headscale headscale preauthkeys expire --key "$kid" -u {{ user_id.stdout | trim }} 2>/dev/null || true
+        done
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Create new reusable preauth key (24h)
+      ansible.builtin.command: docker exec headscale headscale preauthkeys create -u {{ user_id.stdout | trim }} --reusable --expiration 24h
+      register: new_key
+      changed_when: true
+
+    - name: Show new key
+      ansible.builtin.debug:
+        msg: "New preauth key: {{ new_key.stdout }}"
+
+    - name: Run snapshot to persist new key state
+      ansible.builtin.command: /opt/headscale/snapshot.sh
+      changed_when: true

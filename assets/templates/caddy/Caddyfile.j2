@@ -1,0 +1,7 @@
+{{ headscale_domain }} {
+  handle_path /downloads/* {
+    root * /var/www/headscale-downloads
+    file_server
+  }
+  reverse_proxy headscale:8080
+}

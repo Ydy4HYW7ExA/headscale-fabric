@@ -1,0 +1,43 @@
+- name: Sync ubuntu user environment
+  hosts: ubuntu_nodes
+  gather_facts: true
+  vars:
+    master_user: h
+    master_host: ubuntu-master
+  tasks:
+    - name: Ensure SSH directory exists
+      ansible.builtin.file:
+        path: "~/.ssh"
+        state: directory
+        mode: "0700"
+
+    - name: Distribute master public key for passwordless SSH
+      ansible.builtin.shell: |
+        KEY="{{ lookup('file', '/home/' + master_user + '/.ssh/id_ed25519.pub') }}"
+        AUTH=~/.ssh/authorized_keys
+        grep -qF "$KEY" "$AUTH" 2>/dev/null || echo "$KEY" >> "$AUTH"
+        chmod 600 "$AUTH"
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Set hostname to match tailnet name
+      ansible.builtin.hostname:
+        name: "{{ node_name | default(inventory_hostname) }}"
+      become: true
+
+    - name: Ensure common packages
+      ansible.builtin.apt:
+        name:
+          - curl
+          - git
+          - htop
+          - jq
+          - sshpass
+        state: present
+      become: true
+      when: ansible_os_family == "Debian"
+
+    - name: Show synced state
+      ansible.builtin.debug:
+        msg: "Node {{ inventory_hostname }} synced: hostname={{ ansible_hostname }}, user={{ ansible_user }}"

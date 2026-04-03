@@ -1,0 +1,21 @@
+#!/bin/bash
+# Headscale state snapshot — deployed by headscale-fabric
+# Writes latest state to {{ snapshot_dir | default('/opt/headscale/latest-state') }}/
+set -e
+OUT="{{ snapshot_dir | default('/opt/headscale/latest-state') }}"
+mkdir -p "$OUT"
+
+# Nodes (JSON)
+docker exec headscale headscale nodes list -o json > "$OUT/nodes.json" 2>/dev/null || echo "[]" > "$OUT/nodes.json"
+
+# Policy
+docker exec headscale headscale policy get -o json > "$OUT/policy.json" 2>/dev/null || echo "{}" > "$OUT/policy.json"
+
+# Preauth keys
+docker exec headscale headscale preauthkeys list -o json > "$OUT/preauthkeys.json" 2>/dev/null || echo "[]" > "$OUT/preauthkeys.json"
+
+# Docker container status
+docker ps --filter name=headscale --filter name=caddy --format "{% raw %}{{.Names}}\t{{.Status}}\t{{.Ports}}{% endraw %}" > "$OUT/containers.txt" 2>/dev/null || true
+
+# Timestamp
+date -Iseconds > "$OUT/timestamp.txt"

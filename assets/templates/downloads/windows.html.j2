@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Windows 安装</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 40px auto; max-width: 760px; padding: 0 20px; color: #111827; background: #f9fafb; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; box-shadow: 0 1px 2px rgba(0,0,0,.04); margin-bottom: 18px; }
+    .btn { display: inline-block; margin: 8px 10px 8px 0; background: #2563eb; color: #fff; padding: 12px 18px; border-radius: 10px; text-decoration: none; font-weight: 600; }
+    .btn:hover { background: #1d4ed8; }
+    .btn-dark { background: #111827; }
+    .btn-dark:hover { background: #000; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    pre { background: #111827; color: #f9fafb; padding: 14px; border-radius: 10px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+    ol li { margin: 8px 0; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Windows 安装</h1>
+    <p>两步完成：先装官方 Tailscale，再运行接入脚本。脚本会自动加入 tailnet 并部署看门狗守护。</p>
+    <p>
+      <a class="btn" href="https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi">第 1 步：下载官方 MSI</a>
+      <a class="btn btn-dark" href="/downloads/join-windows.cmd" download>第 2 步：下载接入脚本</a>
+    </p>
+    <ol>
+      <li>先安装官方 Tailscale MSI</li>
+      <li>安装完成后，右键 <code>join-windows.cmd</code>，选择"以管理员身份运行"</li>
+      <li>脚本自动完成：启用 Tailscale 服务 → 加入 tailnet → 部署看门狗</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>安装后自动获得</h2>
+    <ul>
+      <li>Tailscale 系统服务（开机自启）</li>
+      <li>看门狗定时任务（每分钟检测，掉线自动重连）</li>
+      <li>禁用看门狗：<code>echo false &gt; C:\headscale-fabric\watchdog.enabled</code></li>
+      <li>删除看门狗：<code>schtasks /delete /tn "HeadscaleFabricWatchdog" /f</code></li>
+    </ul>
+  </div>
+</body>
+</html>

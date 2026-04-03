@@ -1,0 +1,9 @@
+{% for node in nodes %}
+Host {{ node.name }}
+  HostName {{ node.name }}.{{ tailnet_suffix }}
+  User {{ node.user }}
+  IdentitiesOnly yes
+  IdentityFile ~/.ssh/id_ed25519
+  ServerAliveInterval 30
+  ServerAliveCountMax 3
+{% endfor %}

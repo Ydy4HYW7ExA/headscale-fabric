@@ -1,0 +1,65 @@
+- name: Add ubuntu node to tailnet
+  hosts: ubuntu_nodes
+  gather_facts: true
+  vars:
+    headscale_domain: "{{ hostvars['ubuntu-0']['ansible_host'] }}"
+  tasks:
+    - name: Install tailscale
+      ansible.builtin.shell: |
+        curl -fsSL https://tailscale.com/install.sh | sh
+      args:
+        executable: /bin/bash
+        creates: /usr/bin/tailscale
+
+    - name: Check if already connected
+      ansible.builtin.command: tailscale status --json
+      register: ts_status
+      changed_when: false
+      failed_when: false
+
+    - name: Get default user ID
+      ansible.builtin.shell: |
+        sshpass -p '{{ lookup('env', 'HEADSCALE_SERVER_PASS') }}' ssh -o StrictHostKeyChecking=no \
+          root@{{ headscale_domain }} \
+          "docker exec headscale headscale users list -o json" | python3 -c "
+        import sys, json
+        users = json.load(sys.stdin)
+        for u in users:
+            if u.get('name') == 'default':
+                print(u['id'])
+                break
+        "
+      args:
+        executable: /bin/bash
+      register: user_id
+      delegate_to: localhost
+      changed_when: false
+      when: "'BackendState' not in ts_status.stdout or 'Running' not in ts_status.stdout"
+
+    - name: Fetch preauth key from control plane
+      ansible.builtin.command: >
+        sshpass -p '{{ lookup('env', 'HEADSCALE_SERVER_PASS') }}' ssh -o StrictHostKeyChecking=no
+        root@{{ headscale_domain }}
+        docker exec headscale headscale preauthkeys create -u {{ user_id.stdout | trim }} --reusable --expiration 1h
+      register: preauth_key
+      delegate_to: localhost
+      changed_when: true
+      when: "'BackendState' not in ts_status.stdout or 'Running' not in ts_status.stdout"
+
+    - name: Join tailnet
+      ansible.builtin.command: >
+        tailscale up
+        --login-server https://{{ headscale_domain }}
+        --authkey {{ preauth_key.stdout }}
+        --hostname {{ node_name | default(inventory_hostname) }}
+      when: preauth_key is changed
+      changed_when: true
+
+    - name: Verify tailscale status
+      ansible.builtin.command: tailscale status
+      register: final_status
+      changed_when: false
+
+    - name: Show status
+      ansible.builtin.debug:
+        var: final_status.stdout_lines
